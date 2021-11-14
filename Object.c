@@ -1,87 +1,123 @@
-/**
-**********************************************************************************************************************************************************************************************************************************
-* @file:	Object.c
-* @author:	Stan Le
-* @date:	08 Nov 2021 17:29:13 Monday
-* @brief:	The implementation for the base of the Object Oriented ANSI-C
-**********************************************************************************************************************************************************************************************************************************
-**/
+#include <assert.h>     /* for assert() */
+#include <stddef.h>     /* for offsetof() */
+#include <string.h>     /* for memcpy() */
+#include <stdlib.h>     /* for calloc() */
 
-#include <assert.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <stddef.h>
-
-#include "Object_struct.h"
 #include "Object.h"
+#include "Object_struct.h"
 
 /**
- * Selectors
- * one argument _self is the object for dynamic linkage. We verify that
- * it exists and that the required method exists for that object.
- * We then call the method  and pass all arguments to it.
- * The result of the method called will be the result of the selector.
-**/
+ * STATIC METHODS
+ * These helper functions are available to outside files too.
+ * Since these are declared in Object.h, any
+***/
 
-void* ctor(void* _self, va_list* args_list_ptr)
+const void * class_of(const void * _self)
 {
-    // get the class descriptor from the object _self passed in
-    const struct Class* class = classOf(_self);
-    assert(class->ctor);
+    const struct Object * self = _self;
+    assert(self && self->class);
 
-    return class->ctor(_self, args_list_ptr);
+    return self->class;
 }
 
-void* dtor(void* _self)
+size_t size_of(const void * _self)
 {
-    const struct Class* class = classOf(_self);
+    const struct Class * class = class_of(_self);
+    assert(class && class->size);
+
+    return class->size;
+}
+
+const void * super(const void * _self)
+{
+    const struct Class * class = class_of(_self);
+    assert(class && class->super);
+
+    return class->super;
+}
+
+/**
+ * GENERIC SELECTORS
+ * Functions that are used to call the other methods defined in the class descriptor
+***/
+
+/**
+ * @brief Selector function that will call the actual ctor function defined in the class.
+ *        Ctor aids in the creation of a new object
+ *
+ * @param _self the object to call it for
+ * @param arg_list_ptr the optional list of arguments
+ * @return void* return a generic pointer pointing to the constructed object
+ */
+void * ctor(void * _self, va_list * arg_list_ptr)
+{
+    const struct Class * class = class_of(_self);
+    assert(class->ctor);
+
+    return class->ctor(_self, arg_list_ptr);
+}
+
+/**
+ * @brief Selector function that will call the actual destructor given by the class descriptor.
+ *        Dtor aids in the reclaimation of memory when destroying an object
+ *
+ * @param _self the object to call it for
+ * @return void* return a generic pointer pointing to the object for further deconstruction
+ */
+void * dtor(void * _self)
+{
+    const struct Class * class = class_of(_self);
     assert(class->dtor);
 
     return class->dtor(_self);
 }
 
-int puto(const void* _self, FILE* fp)
+/**
+ * @brief Selector fuctions to call the actual differ function defined in the class descriptor.
+ *        Differ check if two objects are different from each other.
+ *
+ * @param _self the object to call it for
+ * @param other the object to compare
+ * @return int return the value returned by the class-defined differ function
+ */
+int differ(const void * _self, const void * other)
 {
-    const struct Class* class = classOf(_self);
-
-    assert(class->puto);
-    return class->puto(_self, fp);
-}
-
-int differ(const void* _self, const void* b)
-{
-    const struct Class* class = classOf(_self);
-
+    const struct Class * class = class_of(_self);
     assert(class->differ);
-    return class->differ(_self, b);
+
+    return class->differ(_self, other);
 }
 
 /**
- * Memory Management Methods
- * I put this under Selectors because these needs to call ctor and dtor
- * so I don't want to have to declare them before defining them
-**/
-
-void* new (const void* _class, ...)
+ * @brief Selector function to call the actual puto function defined by the class descriptor.
+ *        Puto prints the object out to a file.
+ *
+ * @param _self the object to print
+ * @param file_ptr the file to print into
+ * @return int the value returned by the class-defined puto function
+ */
+int puto(const void * _self, FILE * file_ptr)
 {
-    // cast _class to its real type: pointer to a class
-    const struct Class* class = _class;
-    // define a pointer to the new object we're creating
-    struct Object* object;
+    const struct Class * class = class_of(_self);
+    assert(class->puto);
 
-    assert(class&& class->size);
-    // allocate one struct Class space (this is why Class_ctor is
-    // confident that it has enough space for name, size etc. later)
+    return puto(_self, file_ptr);
+}
+
+/**
+ * MEMORY MANAGEMENT FUNCTIONS
+ * new and delete are called whenever a new object is created or destroyed
+***/
+
+void * new(const void * _class, ...)
+{
+    const struct Class * class = _class;
+    assert(class && class->size);
+
+    struct Object * object = NULL;
     object = calloc(1, class->size);
-
     assert(object);
-    // object has only one field which is a pointer to a class
-    // that will now point to that class descriptor we passed in
-    // as _class (which was casted into the variable "class" earlier)
-    object->class = class;
 
-    // define the list of variables to pass to the ctor later
     va_list arg_list;
     va_start(arg_list, _class);
     object = ctor(object, &arg_list);
@@ -90,199 +126,189 @@ void* new (const void* _class, ...)
     return object;
 }
 
-void delete (void* _self)
+void delete(void * _self)
 {
     if (_self)
         free(dtor(_self));
+    _self = NULL;
 }
 
 /**
- * Superclass Selectors
- * before a subclass constructor perform its own initialization, it has
- * to call the superclass constructor first.
- * after a subclass destructor reclaims all its resources it need to
- * call the superclass destructor to continue the reclaimation.
-**/
+ * SUPER CLASS SELECTORS
+ * Functions that are called by any subclasses to access its superclass methods.
+***/
 
-void* super_ctor(const void* _class, void* _self, va_list* args_list_ptr)
+void * super_ctor(const void * _class, void * _self, va_list * arg_list_ptr)
 {
-    const struct Class* superclass = super(_class);
+    const struct Class * superclass = super(_class);
     assert(_self && superclass->ctor);
 
-    return superclass->ctor(_self, args_list_ptr);
+    return superclass->ctor(_self, arg_list_ptr);
 }
 
-void* super_dtor(const void* _class, void* _self)
+void * super_dtor(const void * _class, void * _self)
 {
-    const struct Class* superclass = super(_class);
+    const struct Class * superclass = super(_class);
     assert(_self && superclass->dtor);
 
     return superclass->dtor(_self);
 }
 
-int super_differ(const void* _class, const void* _self, const void* b)
+int super_differ(const void * _class, const void * _self, const void* other)
 {
     const struct Class* superclass = super(_class);
 
     assert(_self && superclass->differ);
-    return superclass->differ(_self, b);
+    return superclass->differ(_self, other);
 }
 
-int super_puto(const void* _class, const void* _self, FILE* fp)
+int super_puto(const void * _class, const void * _self, FILE * file_ptr)
 {
-    const struct Class* superclass = super(_class);
+    const struct Class * superclass = super(_class);
 
     assert(_self && superclass->puto);
-    return superclass->puto(_self, fp);
+    return superclass->puto(_self, file_ptr);
 }
 
 /**
- * These helper functions are available to outside files.
-**/
-
-const void* classOf(const void* _self)
-{
-    const struct Object* self = _self;
-    assert(self && self->class);
-
-    return self->class;
-}
-
-size_t sizeOf(const void* _self)
-{
-    const struct Class* class = classOf(_self);
-
-    return class->size;
-}
-
-const void* super(const void* _self)
-{
-    const struct Class* self = _self;
-    assert(self && self->super);
-
-    return (self->super);
-}
+ * OBJECT CLASS METHODS
+ * Methods that are unique to the Object class. Since Object is the base class of everything,
+ * its method is the default of all its subclasses, including the Class metaclass.
+***/
 
 /**
- * Object class methods implementation
- * Object us the simplest class which can be created, destroyed,
- * displayed or check if differ.
- * Functions marked as static are ironically dynamically linked through
- * the use of selectors, thus they are marked to make sure they can't
- * be accessed outside this implementation file.
- * The selectors are available so they can be accessed by other files.
-**/
-
-static void* Object_ctor(void* _self, va_list* arg_list)
+ * @brief By the time the contructor of Object is called, the new() method has already created
+ * a pointer to the object and allocated a chunk of memory to it. It has also copied the class
+ * descriptor pointer into the only field that Object has, the "class" field. Therefore there
+ * is nothing for Object_ctor to do.
+ *
+ * @param _self the pointer to the Object
+ * @param arglist_ptr the pointer to the optional list of arguments, will always be empty for
+ *                    Object since we don't have extra data aside from the class descriptor.
+ * @return void* the pointer to the object
+ */
+static void * Object_ctor(void * _self, va_list * arglist_ptr)
 {
     return _self;
 }
 
-static void* Object_dtor(void* _self)
+/**
+ * @brief "Delete" all the data in Object. Since Object has only one data field which is
+ * the class descriptor pointer, which is the responsibility of delete(), we do nothing here
+ *
+ * @param _self pointer to the Object to be destructed
+ */
+static void * Object_dtor(void * _self)
 {
     return _self;
 }
 
-static int Object_differ(const void* _self, const void* b)
+static int Object_differ(const void * _self, const void * other)
 {
-    return (_self != b);
+    return (_self != other);
 }
 
-static int Object_puto(const void* _self, FILE* file_pointer)
+static int Object_puto(const void * _self, FILE * file_ptr)
 {
-    const struct Class* class = classOf(_self);
+    const struct Class * class = class_of(_self);
 
-    return fprintf(file_pointer, "%s at %p\n", class->name, _self);
+    return fprintf(file_ptr, "%s at %p\n", class->name, _self);
 }
 
 /**
- * "Class" metaclass methods implenentation
- * Class is a metaclass that can only be created, the dtor of class
- * will return a NULL value to make sure it cannot be deleted.
- * Class is even simpler than Object eventhough it is a subclass of
- * Object.
- * Functions marked as static are ironically dynamically linked through
- * the use of selectors, thus they are marked to make sure they can't
- * be accessed outside this implementation file.
-**/
+ * CLASS METACLASS METHODS
+ * Methods that are unique to the Class metaclass. It is only used to create a new class
+ * descriptor so it only really ctor method, the dtor method is there to ensure that we
+ * prevent accidental deletion of class descriptors.
+***/
 
-static void* Class_ctor(void* _self, va_list* arg_pointer)
+static void * Class_ctor(void * _self, va_list * arglist_ptr)
 {
-    struct Class* self = _self;
+    /* "self" is a class descriptor so cast it as such */
+    struct Class * self = _self;
 
-    self->name = va_arg(*arg_pointer, char*);
-    self->super = va_arg(*arg_pointer, struct Class*);
-    self->size = va_arg(*arg_pointer, size_t);
+    /* pass the values in the arg list into self */
+    self->name = va_arg(*arglist_ptr, char *);
+    self->super = va_arg(*arglist_ptr, struct Class *);
+    self->size = va_arg(*arglist_ptr, size_t);
     assert(self->super);
 
-    // Inheritance - copy the constructor and all other methods from
-    // the super class description at super to new class description
-    // at self:
+    /* Now is the hard part, we need to pass all the methods into
+    their correct position on the class descriptor */
+    /* First find the offset of the ctor method inside the class struct */
     const size_t offset = offsetof(struct Class, ctor);
-    memcpy((char*)self + offset, (char*)self->super + offset, sizeOf(self->super) - offset);
+    /* Here we assume that the superclass descriptor has been constructed.
+    if so we can copy all of its methods to this newly created class descriptor
+    first, then later we can just modify the ones we define in the arg_list */
+    /**
+     * Here we have:
+     * (char *) self + offset : address of self + offset is the destination to copy the
+     *   data to. Casted to char pointer because char is guaranteed to be 1 byte, therefore
+     *   its pointer arithmetic will be equivalent to pointer-to-byte arithmetic. As in,
+     *   when you add or substract 1 to the pointer, the address is moved 1 byte forward or
+     *   backward.
+     * (char *) self->super + offset: the data come from the super class descriptor starting
+     *   at offset.
+     * size_of(self->super) - offset: size_of(self->super) is the size of the entire
+     *   superclass descriptor. Since we only need to copy from the position of offset
+     *   to the end, we substract offset from the total size to get the correct chunk.
+    **/
+    memcpy((char *) self + offset, (char *) self->super + offset, size_of(self->super) - offset);
 
-    // since function pointer and generic pointer may have different size,
-    // we can't cast between them directly.
-    // we need to create an intermediate "type" to hold a function pointer
-    // this magical definition is for a type of function pointer to
-    // functions that do not return anything
-    typedef void (*ptr_to_void_func_type)();
-    ptr_to_void_func_type selector;
-    // create a new va_list which is a copy of the va_list that arg_pointer point to
-    // so when we use arg_list instead of *arg_pointer, the original list won't be
-    // increasing. We do this so that this list of args can be reused.
-    va_list arg_list = *arg_pointer;
+    /* pointer to any type usually have the same size, except for the pointer to function. on
+    some system, the pointer to function may have different value since it's not part of the
+    data section. Therefore casting between void *, aka generic pointer and a function pointer
+    is not allowed. We can create a new type using typedef, and this new type will be in the
+    type of a pointer to generic function */
+    typedef void (*func_ptr)();
+    func_ptr selector;
 
-    // go through the list of given methods in arg_pointer
-    // if we find a function listed, overwrite the original one
-    // we just copied from super with that new function pointer
-    while ((selector = va_arg(arg_list, ptr_to_void_func_type)))
+    /* copy the arglist to a new one so we can reuse the arglist_ptr multiple times */
+    va_list cpy_arglist;
+    va_copy(cpy_arglist, *arglist_ptr);
+    /* the data given in the arg_list is of this structure: general name, local implementation
+    to  map each methods given to its correct slot we use an chain if statement here until we
+    read NULL */
+    while (selector = va_arg(cpy_arglist, func_ptr))
     {
-        ptr_to_void_func_type method = va_arg(arg_list, ptr_to_void_func_type);
-        if (selector == (ptr_to_void_func_type)ctor)
-        {
-            *(ptr_to_void_func_type*)&self->ctor = method;
-        }
-        else if (selector == (ptr_to_void_func_type)dtor)
-        {
-            *(ptr_to_void_func_type*)&self->dtor = method;
-        }
-        else if (selector == (ptr_to_void_func_type)differ)
-        {
-            *(ptr_to_void_func_type*)&self->differ = method;
-        }
-        else if (selector == (ptr_to_void_func_type)puto)
-        {
-            *(ptr_to_void_func_type*)&self->puto = method;
-        }
+        func_ptr method = va_arg(cpy_arglist, func_ptr);
+        /* at this point selector holds the slot and method holds the local implementation */
+        if (selector == (func_ptr) ctor)
+            /* since self->ctor is of the type void* (*)(const void *, va_list *) we need to cast
+            it to the (func_pointer) type, we can either do it this way or cast method to self->ctor
+            type, but since we have a bunch of them with different footprints it's more convenience
+            this way. */
+            *((func_ptr *) &self->ctor) = method;
+        else if (selector == (func_ptr) dtor)
+            *((func_ptr*) &self->dtor) = method;
+        else if (selector == (func_ptr) differ)
+            *((func_ptr*) &self->differ) = method;
+        else if (selector == (func_ptr) puto)
+            *((func_ptr*) &self->puto) = method;
     }
 
     return self;
 }
 
-static void* Class_dtor(void* _self)
+static void * Class_dtor(void * _self)
 {
-    struct Class* self = _self;
+    struct Class * self = _self;
+    fprintf(stderr, "%s: cannot destroy class", self->name);
 
-    fprintf(stderr, "%s: cannot destroy class\n", self->name);
-    return 0;
+    return NULL;
 }
 
-
 /**
- * Initialization
- * As Class requires Object as a superclass while Object requires Class
- * too for its initiaion, but at this point they are both not initialized,
- * we will manually initialize them both in a struct Class
-**/
+ * INITIALIZATION
+ * A very important step that requires special explaination. Each of the two members
+ * of the struct is a class descriptor in itself, the first one for the Object class,
+ * and the second one for the Class metaclass. The Object class needs a class descriptor,
+ * therefore it needs a fully initialized Class metaclass. The Class metaclass in turn is
+ * a subclass of the Object class and needs a fully initialized Object class. Therefore,
+ * we need to be creative in how we solve this problem
+***/
 
 static const struct Class object[] = {
-    /**
-     * Since there is no struct Class already initialized for struct
-     * Object to point to, we will just initialize one for it instead
-     * of passing it a pointer
-     * this is a struct Class named object[0] or object for short
-    **/
     {
         /* These params correspond to: */
         {object + 1},          /* const struct Object _ */
@@ -303,8 +329,9 @@ static const struct Class object[] = {
         Class_dtor,
         Object_differ,
         Object_puto,
-     }, 
+     },
 };
-// now we can use object[0] and object[1] as "Object" and "Class".
+
+/* now we can use object[0] and object[1] as "Object" and "Class". */
 const void* Object = object;
 const void* Class = object + 1;
