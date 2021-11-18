@@ -1,4 +1,3 @@
-#include <stdarg.h>
 #include <assert.h>
 
 #include "Point.h"
@@ -41,7 +40,7 @@ void super_draw(const void * _class, const void * _self)
 }
 
 /******************************************************************************
- * POINT CLASS
+ * POINT CLASS METHODS
 *******************************************************************************/
 
 static void * Point_ctor(void * _self, va_list * arglist_ptr)
@@ -64,28 +63,39 @@ static void Point_draw(const void * _self)
 /******************************************************************************
  * POINTCLASS METACLASS
 *******************************************************************************/
+/* Call class constructor to create a list of dynamically linked methods of ctor,
+ * dtor, differ and puto. Then add the draw function pointer to the draw spot
+ * on the PointClass descriptor we're working on. (refer to Point_struct.h for
+ * the full PointClass struct. However it is just an extension of the Class struct
+ * since it only has one Class struct member and then a pointer for the draw method) */
 
 static void * PointClass_ctor(void * _self, va_list * arglist_ptr)
 {
     struct PointClass * self = super_ctor(PointClass, _self, arglist_ptr);
+
     typedef void (*funcptr)();
     funcptr selector;
+
     va_list cpy_arglist;
     va_copy(cpy_arglist, *arglist_ptr);
-    while (selector = va_arg(cpy_arglist, funcptr))
+
+    while ((selector = va_arg(cpy_arglist, funcptr)))
     {
         funcptr method = va_arg(cpy_arglist, funcptr);
         if (selector == (funcptr) draw)
             *(funcptr*) &self->draw = method;
     }
-
+    va_end(cpy_arglist);
     return self;
 }
 
 /******************************************************************************
  * INITIALIZATION
 *******************************************************************************/
-const void * PointClass, * Point;
+
+const void * PointClass;
+const void * Point;
+
 void initPoint(void)
 {
     if (!PointClass)
@@ -95,8 +105,7 @@ void initPoint(void)
             "PointClass",
             Class,
             sizeof(struct PointClass),
-            ctor, PointClass_ctor,
-            0);
+            ctor, PointClass_ctor, NULL);
     }
     if (!Point)
     {
@@ -106,7 +115,6 @@ void initPoint(void)
             Object,
             sizeof(struct Point),
             ctor, Point_ctor,
-            draw, Point_draw,
-            0);
+            draw, Point_draw, NULL);
     }
 }

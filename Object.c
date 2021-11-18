@@ -23,17 +23,16 @@ const void * class_of(const void * _self)
 size_t size_of(const void * _self)
 {
     const struct Class * class = class_of(_self);
-    assert(class && class->size);
 
     return class->size;
 }
 
 const void * super(const void * _self)
 {
-    const struct Class * class = class_of(_self);
-    assert(class && class->super);
+    const struct Class * self = _self;
+    assert(self && self->super);
 
-    return class->super;
+    return self->super;
 }
 
 /**
@@ -117,6 +116,7 @@ void * new(const void * _class, ...)
     struct Object * object = NULL;
     object = calloc(1, class->size);
     assert(object);
+    object->class = class;
 
     va_list arg_list;
     va_start(arg_list, _class);
@@ -286,7 +286,7 @@ static void * Class_ctor(void * _self, va_list * arglist_ptr)
         else if (selector == (func_ptr) puto)
             *((func_ptr*) &self->puto) = method;
     }
-
+    va_end(cpy_arglist);
     return self;
 }
 
