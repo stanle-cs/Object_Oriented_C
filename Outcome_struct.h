@@ -1,7 +1,7 @@
 #ifndef __OUTCOME_STRUCT__H__SL
 #define __OUTCOME_STRUCT__H__SL
 
-#include "../Object_struct.h"
+#include "Object_struct.h"
 
 struct Outcome
 {
