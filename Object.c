@@ -100,7 +100,7 @@ int puto(const void * _self, FILE * file_ptr)
     const struct Class * class = class_of(_self);
     assert(class->puto);
 
-    return puto(_self, file_ptr);
+    return class->puto(_self, file_ptr);
 }
 
 /**
