@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "Point.h"
 #include "Circle.h"
 
@@ -30,6 +31,7 @@ int main(int argc, char ** argv)
         draw(p);
         move(p, 10, 20);
         draw(p);
+	puto(p, stdout);
         delete(p);
     }
     return 0;
