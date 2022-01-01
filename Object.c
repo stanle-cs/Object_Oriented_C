@@ -6,11 +6,10 @@
 #include "Object.h"
 #include "Object_struct.h"
 
-/**
+/******************************************************************************
  * STATIC METHODS
  * These helper functions are available to outside files too.
- * Since these are declared in Object.h, any
-***/
+*******************************************************************************/
 
 const void * class_of(const void * _self)
 {
@@ -35,10 +34,10 @@ const void * super(const void * _self)
     return self->super;
 }
 
-/**
+/******************************************************************************
  * GENERIC SELECTORS
  * Functions that are used to call the other methods defined in the class descriptor
-***/
+*******************************************************************************/
 
 /**
  * @brief Selector function that will call the actual ctor function defined in the class.
@@ -103,10 +102,10 @@ int puto(const void * _self, FILE * file_ptr)
     return class->puto(_self, file_ptr);
 }
 
-/**
+/******************************************************************************
  * MEMORY MANAGEMENT FUNCTIONS
  * new and delete are called whenever a new object is created or destroyed
-***/
+*******************************************************************************/
 
 void * new(const void * _class, ...)
 {
@@ -132,11 +131,10 @@ void delete(void * _self)
         free(dtor(_self));
     _self = NULL;
 }
-
-/**
+/******************************************************************************
  * SUPER CLASS SELECTORS
  * Functions that are called by any subclasses to access its superclass methods.
-***/
+*******************************************************************************/
 
 void * super_ctor(const void * _class, void * _self, va_list * arg_list_ptr)
 {
@@ -170,11 +168,11 @@ int super_puto(const void * _class, const void * _self, FILE * file_ptr)
     return superclass->puto(_self, file_ptr);
 }
 
-/**
+/******************************************************************************
  * OBJECT CLASS METHODS
  * Methods that are unique to the Object class. Since Object is the base class of everything,
  * its method is the default of all its subclasses, including the Class metaclass.
-***/
+*******************************************************************************/
 
 /**
  * @brief By the time the contructor of Object is called, the new() method has already created
@@ -215,12 +213,12 @@ static int Object_puto(const void * _self, FILE * file_ptr)
     return fprintf(file_ptr, "%s at %p\n", class->name, _self);
 }
 
-/**
+/******************************************************************************
  * CLASS METACLASS METHODS
  * Methods that are unique to the Class metaclass. It is only used to create a new class
  * descriptor so it only really ctor method, the dtor method is there to ensure that we
  * prevent accidental deletion of class descriptors.
-***/
+*******************************************************************************/
 
 static void * Class_ctor(void * _self, va_list * arglist_ptr)
 {
@@ -298,7 +296,7 @@ static void * Class_dtor(void * _self)
     return NULL;
 }
 
-/**
+/******************************************************************************
  * INITIALIZATION
  * A very important step that requires special explaination. Each of the two members
  * of the struct is a class descriptor in itself, the first one for the Object class,
@@ -306,7 +304,7 @@ static void * Class_dtor(void * _self)
  * therefore it needs a fully initialized Class metaclass. The Class metaclass in turn is
  * a subclass of the Object class and needs a fully initialized Object class. Therefore,
  * we need to be creative in how we solve this problem
-***/
+*******************************************************************************/
 
 static const struct Class object[] = {
     {
